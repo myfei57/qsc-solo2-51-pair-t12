@@ -9,6 +9,9 @@ AUDIT_SEQUENCE = "audit/sequence"
 AUDIT_EVENT_PREFIX = "audit/event/"
 AUDIT_LAST_PREFIX = "audit/last/"
 
+ALARM_RECORDS = "alarm/records"
+ALARM_HISTORY = "alarm/history"
+
 
 def audit_event_key(sequence: int) -> str:
     """Key holding the event written at ``sequence``."""

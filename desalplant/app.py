@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 
+from .alarms.registry import AlarmRegistry
 from .audit.recorder import Recorder
 from .clock import LogicalClock
 from .config import Config
@@ -19,6 +20,7 @@ class Application:
     store: Store
     clock: LogicalClock
     recorder: Recorder
+    registry: AlarmRegistry
     plant: Plant
     console: Console
 
@@ -32,13 +34,15 @@ def build_application(config: Config) -> Application:
     store = Store(config.store_path())
     clock = LogicalClock()
     recorder = Recorder(store, clock)
-    plant = Plant(store, clock, recorder)
+    registry = AlarmRegistry(store, clock, recorder)
+    plant = Plant(store, clock, recorder, registry)
     console = Console(plant)
     return Application(
         config=config,
         store=store,
         clock=clock,
         recorder=recorder,
+        registry=registry,
         plant=plant,
         console=console,
     )

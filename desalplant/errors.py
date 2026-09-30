@@ -54,6 +54,10 @@ class AlarmNotActiveError(ContractError):
     """Raised when a recovery latch is cleared while it is not raised."""
 
 
+class AlarmImmutableError(ContractError):
+    """Raised when history is rewritten after it was acknowledged or cleared."""
+
+
 class InvalidEfficiencyError(ContractError):
     """Raised when a pump efficiency factor falls outside its band."""
 

@@ -2,6 +2,8 @@
 
 from typing import Any
 
+from ..alarms.evaluate import observations as alarm_observations
+from ..alarms.registry import AlarmRegistry
 from ..audit.event import Event
 from ..audit.recorder import Recorder
 from ..brine.stream import BrineStream
@@ -33,7 +35,7 @@ from ..tank.handoff import handoff
 from ..tank.level import Level
 from ..tank.product import ProductTank
 from ..tank.tanks import TankSet
-from . import alarms, audit_report, integration, probes, reports, summary, telemetry, version
+from . import audit_report, integration, probes, reports, summary, telemetry, version
 from .version import BuildInfo
 
 RAMP_TARGET = 60.0
@@ -48,10 +50,11 @@ LAST_STAGE_READINGS = {"s3": 5.0}
 class Plant:
     """Every subsystem of the line, wired together behind the console."""
 
-    def __init__(self, store: Store, clock: LogicalClock, recorder: Recorder) -> None:
+    def __init__(self, store: Store, clock: LogicalClock, recorder: Recorder, registry: AlarmRegistry | None = None) -> None:
         self.store = store
         self.clock = clock
         self.recorder = recorder
+        self.registry = registry if registry is not None else AlarmRegistry(store, clock, recorder)
         self.state = PlantState.IDLE
 
         self.feed = Feed()
@@ -105,6 +108,7 @@ class Plant:
         self.product.fill(self.permeate)
         self.output.check(self.hp_pump.efficiency, PRODUCE_POWER)
         self.level.update(PRODUCE_LEVEL)
+        self.registry.sweep(alarm_observations(self))
         return self.recorder.log("produce", "permeate produced")
 
     def shutdown(self) -> Event:
@@ -199,9 +203,26 @@ class Plant:
         """Structural diagnostics."""
         return telemetry.diagnostics(self)
 
-    def alarms(self) -> list[dict[str, Any]]:
-        """Current alarms."""
-        return alarms.alarms(self)
+    def alarms(self, include_history: bool = False) -> list[dict[str, Any]]:
+        """Current alarm records, refreshed from the monitored components.
+
+        Each call sweeps the components into the registry so the returned view
+        reflects the latest graded state. Live records are returned by default;
+        pass ``include_history`` to also include immutable cleared records.
+        """
+        self.registry.sweep(alarm_observations(self))
+        records = self.registry.records() if include_history else self.registry.live()
+        return [record.to_dict() for record in records]
+
+    def acknowledge_alarm(self, cause: str, by: str = "operator") -> dict[str, Any]:
+        """Acknowledge a live alarm; the record becomes immutable history."""
+        self.registry.sweep(alarm_observations(self))
+        return self.registry.acknowledge(cause, by).to_dict()
+
+    def clear_alarm(self, cause: str, reason: str = "") -> dict[str, Any]:
+        """Explicitly clear a live alarm under a stated condition."""
+        self.registry.sweep(alarm_observations(self))
+        return self.registry.clear(cause, reason).to_dict()
 
     def selftest(self) -> dict[str, Any]:
         """Drive the whole line once and report every step."""

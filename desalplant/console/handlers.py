@@ -31,8 +31,31 @@ def events(console, request: Request) -> Response:
 
 
 def alarms(console, request: Request) -> Response:
-    """Current component alarms."""
-    return json_response([alarm.to_dict() for alarm in console.plant.alarms()])
+    """Current graded alarm records."""
+    include_history = request.boolean("history", False)
+    return json_response(console.plant.alarms(include_history=include_history))
+
+
+def acknowledge_alarm(console, request: Request) -> Response:
+    """Acknowledge a live alarm; it becomes immutable history."""
+    body = request.body()
+    cause = str(body.get("cause", ""))
+    by = str(body.get("by", "operator"))
+    if not cause:
+        raise ValueError("alarm cause is required")
+    record = console.plant.acknowledge_alarm(cause, by)
+    return json_response({"status": "acknowledged", "alarm": record})
+
+
+def clear_alarm(console, request: Request) -> Response:
+    """Explicitly clear a live alarm under a stated condition."""
+    body = request.body()
+    cause = str(body.get("cause", ""))
+    reason = str(body.get("reason", ""))
+    if not cause:
+        raise ValueError("alarm cause is required")
+    record = console.plant.clear_alarm(cause, reason)
+    return json_response({"status": "cleared", "alarm": record})
 
 
 def diagnostics(console, request: Request) -> Response:

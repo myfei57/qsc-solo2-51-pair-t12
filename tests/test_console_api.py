@@ -77,8 +77,30 @@ def test_events_honour_the_limit_parameter(console):
 
 def test_alarms_cover_every_monitored_component(console):
     alarms = ok(console, "GET", "/api/alarms")
-    assert len(alarms) == 3
-    assert all(set(alarm) == {"id", "severity", "message"} for alarm in alarms)
+    assert isinstance(alarms, list)
+    # Every record carries the core fields plus the graded lifecycle fields.
+    core = {"id", "severity", "message"}
+    graded = {
+        "cause",
+        "source",
+        "state",
+        "magnitude",
+        "first_tick",
+        "last_tick",
+        "duration",
+        "jitter_count",
+        "grading_basis",
+        "acknowledged",
+        "clearing_condition",
+    }
+    for alarm in alarms:
+        assert core <= set(alarm)
+        assert graded <= set(alarm)
+    # The product tank starts empty, so a low-level alarm is live and graded.
+    low = next(a for a in alarms if a["cause"] == "tank.level.low")
+    assert low["state"] == "active"
+    assert low["severity"] == "critical"
+    assert "overshoot" in low["grading_basis"]
 
 
 def test_diagnostics_expose_the_sensor_map(console, plant):

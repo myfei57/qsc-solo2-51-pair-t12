@@ -3,6 +3,7 @@
 from typing import Any, Callable
 
 from ..errors import (
+    AlarmImmutableError,
     AlarmNotActiveError,
     ContractError,
     FeedAlreadyStoppedError,
@@ -40,6 +41,7 @@ CONFLICT = (
     SupplyInterruptedError,
     HandoffIncompleteError,
     AlarmNotActiveError,
+    AlarmImmutableError,
     TransferFailedError,
     RinseFailedError,
     MediaNotReadyError,
@@ -53,6 +55,8 @@ ROUTES: tuple[tuple[str, str, Handler], ...] = (
     ("POST", routes.SHUTDOWN, operations.shutdown),
     ("POST", routes.SWITCH, operations.switch),
     ("POST", routes.MAINTAIN, operations.maintain),
+    ("POST", routes.ALARM_ACKNOWLEDGE, handlers.acknowledge_alarm),
+    ("POST", routes.ALARM_CLEAR, handlers.clear_alarm),
 )
 
 

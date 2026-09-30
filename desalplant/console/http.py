@@ -60,6 +60,15 @@ class Request:
             raise ValueError("request body has to be a JSON object")
         return decoded
 
+    def body_object_or_list(self) -> dict[str, Any] | list[Any]:
+        """Decoded JSON body accepting either an object or an array."""
+        if not self.body_text.strip():
+            return {}
+        decoded = json.loads(self.body_text)
+        if not isinstance(decoded, (dict, list)):
+            raise ValueError("request body has to be a JSON object or array")
+        return decoded
+
 
 @dataclass(frozen=True)
 class Response:

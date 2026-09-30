@@ -33,6 +33,12 @@ from ..tank.handoff import handoff
 from ..tank.level import Level
 from ..tank.product import ProductTank
 from ..tank.tanks import TankSet
+from ..watch import (
+    DEFAULT_POLICIES,
+    DEFAULT_POLICY,
+    Report,
+    WatchManager,
+)
 from . import alarms, audit_report, integration, probes, reports, summary, telemetry, version
 from .version import BuildInfo
 
@@ -76,6 +82,15 @@ class Plant:
         self.product = ProductTank()
         self.level = Level()
         self.brine_stream = BrineStream(concentration=0.6)
+        self.watch = WatchManager(
+            store,
+            recorder,
+            self.clock,
+            policies=DEFAULT_POLICIES,
+            default_policy=DEFAULT_POLICY,
+            on_shutdown=self.alarm_trip,
+        )
+        self.last_trip: dict[str, Any] | None = None
 
     # ------------------------------------------------------------- lifecycle
 
@@ -144,6 +159,66 @@ class Plant:
     def pump_differential(self) -> float:
         """Pressure differential over the array's final stage."""
         return differential(self.hp_pump, self.array, dict(LAST_STAGE_READINGS))
+
+    # ------------------------------------------------------ graded alarms
+
+    def alarm_trip(self, incident) -> None:
+        """Stop the line when a graded incident reaches the shutdown tier."""
+        self.last_trip = {
+            "incident_id": incident.id,
+            "cause": incident.cause,
+            "tick": self.clock.tick,
+            "tier": incident.tier.label(),
+        }
+        if self.state is PlantState.RUNNING:
+            self.state = PlantState.STOPPING
+            self.store.put(keys.PLANT_STATE, self.state.value)
+            self.store.put(keys.PLANT_STOPPED_AT, self.clock.tick)
+            try:
+                self.doser.stop(self.feed)
+            except Exception:  # pragma: no cover - trip must never be blocked
+                pass
+            self.intake_pump.shutdown(self.rack)
+            self.state = PlantState.IDLE
+            self.store.put(keys.PLANT_STATE, self.state.value)
+            self.recorder.log("trip", f"line tripped on {incident.cause}")
+
+    def watch_report(self, body: dict[str, Any] | list[Any]) -> dict[str, Any]:
+        """Ingest one observation, or a concurrent multi-cause batch."""
+        if isinstance(body, list):
+            return self.watch.ingest_batch(Report.from_dict(row) for row in body)
+        return self.watch.ingest_tick([Report.from_dict(body)])
+
+    def watch_sweep(self) -> dict[str, Any]:
+        """Grade the current component readings as one concurrent sweep."""
+        from . import watchfeed
+
+        reports = watchfeed.component_reports(self, self.watch.next_tick())
+        return self.watch.ingest_batch(reports)
+
+    def watch_active(self) -> list[dict[str, Any]]:
+        """Open graded incidents with their basis and clear conditions."""
+        return self.watch.active_incidents()
+
+    def watch_history(self, cause: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
+        """Graded incident history, newest first."""
+        return self.watch.history(cause=cause, limit=limit)
+
+    def watch_policies(self) -> list[dict[str, Any]]:
+        """Grading basis of every configured cause."""
+        return [policy.to_dict() for policy in self.watch.policies()]
+
+    def watch_incident(self, incident_id: str) -> dict[str, Any]:
+        """One graded incident with basis and clear condition."""
+        return self.watch.incident_view(incident_id)
+
+    def watch_acknowledge(self, incident_id: str) -> dict[str, Any]:
+        """Freeze an open incident as acknowledged, immutable history."""
+        return self.watch.acknowledge(incident_id)
+
+    def watch_resolve(self, incident_id: str) -> dict[str, Any]:
+        """Resolve an acknowledged incident once its clear conditions hold."""
+        return self.watch.resolve(incident_id)
 
     # --------------------------------------------------------------- reading
 

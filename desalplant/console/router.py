@@ -23,7 +23,14 @@ from ..errors import (
     UnknownKeyError,
     ValveNotOpenError,
 )
-from . import handlers, operations, routes
+from ..watch.errors import (
+    ClearConditionsUnmetError,
+    IncidentNotAcknowledgedError,
+    InvalidPolicyError,
+    StaleTickError,
+    UnknownIncidentError,
+)
+from . import handlers, operations, routes, watchhandlers, watchops
 from .http import Request, Response, error_response
 
 Handler = Callable[["Console", Request], Response]
@@ -44,11 +51,18 @@ CONFLICT = (
     RinseFailedError,
     MediaNotReadyError,
 )
-MALFORMED = (InvalidEfficiencyError, InvalidStagesError)
-MISSING = (UnknownKeyError,)
+MALFORMED = (InvalidEfficiencyError, InvalidStagesError, InvalidPolicyError)
+MISSING = (UnknownKeyError, UnknownIncidentError)
+CONFLICT_WATCH = (
+    StaleTickError,
+    IncidentNotAcknowledgedError,
+    ClearConditionsUnmetError,
+)
 
 ROUTES: tuple[tuple[str, str, Handler], ...] = (
     *((method, path, handler) for path, handler in handlers.ROUTE_TABLE for method in ("GET",)),
+    *((method, path, handler) for path, handler in watchhandlers.ROUTE_TABLE for method in ("GET",)),
+    *((method, path, handler) for method, path, handler in watchops.ROUTE_TABLE),
     ("POST", routes.START, operations.start),
     ("POST", routes.SHUTDOWN, operations.shutdown),
     ("POST", routes.SWITCH, operations.switch),
@@ -58,12 +72,12 @@ ROUTES: tuple[tuple[str, str, Handler], ...] = (
 
 def status_for(error: ContractError) -> int:
     """Map a contract violation onto a response status."""
-    if isinstance(error, CONFLICT):
-        return 409
-    if isinstance(error, MALFORMED):
-        return 422
     if isinstance(error, MISSING):
         return 404
+    if isinstance(error, MALFORMED):
+        return 422
+    if isinstance(error, CONFLICT) or isinstance(error, CONFLICT_WATCH):
+        return 409
     if isinstance(error, StoreError):
         return 500
     return 400

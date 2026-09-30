@@ -21,17 +21,22 @@ class Recorder:
         """Sequence number of the newest event."""
         return self._sequence
 
-    def log(self, kind: str, detail: str) -> Event:
-        """Append an event and return it."""
+    def log(self, kind: str, detail: str, tick: int | None = None) -> Event:
+        """Append an event and return it.
+
+        ``tick`` stamps an externally ordered observation; when omitted the
+        recorder's logical clock supplies the tick.
+        """
         if not kind:
             raise ValueError("event kind must not be empty")
         self._sequence += 1
-        tick = self._clock.tick if self._clock is not None else 0
+        if tick is None:
+            tick = self._clock.tick if self._clock is not None else 0
         event = Event(
             sequence=self._sequence,
             kind=kind,
             detail=detail,
-            tick=tick,
+            tick=int(tick),
             id=new_id(),
         )
         self._store.put(keys.AUDIT_SEQUENCE, self._sequence)
